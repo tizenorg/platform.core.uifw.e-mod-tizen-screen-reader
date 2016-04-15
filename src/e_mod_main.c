@@ -12,6 +12,199 @@ EAPI E_Module_Api e_modapi =
    "Screen Reader Module of Window Manager"
 };
 
+static Evas_Object *gesture_rectangle;
+static void
+_resize_canvas_gesture(Ecore_Evas *ee EINA_UNUSED)
+{
+   int x, y, w, h;
+   ecore_evas_geometry_get(e_comp->ee, &x, &y, &w, &h);
+   evas_object_geometry_set(gesture_rectangle, x, y, 300, 400);
+}
+static void
+_gesture_init(void)
+{
+   gesture_rectangle = evas_object_rectangle_add(e_comp->evas);
+   evas_object_layer_set(gesture_rectangle, E_LAYER_MAX);
+   evas_object_repeat_events_set(gesture_rectangle, EINA_FALSE);
+   _resize_canvas_gesture(e_comp->ee);
+   evas_object_color_set(gesture_rectangle, 0, 100, 0, 100);
+   evas_object_show(gesture_rectangle);
+   ecore_evas_callback_resize_set(e_comp->ee, _resize_canvas_gesture);
+}
+int MAGIC_NUMBER = 987654321;
+static Eina_Bool
+_mouse_button_check(int type, Ecore_Event_Mouse_Button *event)
+{
+   Ecore_Event_Mouse_Button *ev;
+   if (event->multi.radius == MAGIC_NUMBER)
+     {
+        /* change value here */
+        event->x += 100;
+        event->y += 100;
+DBG("[KSW]>>>>>     [TRUE] same_screen: %d, (x, y: %d, %d), (root x, y: %d, %d), mulit.device: %d", event->same_screen, event->x, event->y, event->root.x, event->root.y, event->multi.device);
+        return EINA_TRUE;
+     }
+
+   if (!(ev = malloc(sizeof(Ecore_Event_Mouse_Button))))
+     {
+        DBG("NOT ENOUGH MEMORY");
+        return EINA_FALSE;
+     }
+   memcpy(ev, event, sizeof(Ecore_Event_Mouse_Button));
+#if 0
+   ev->window = event->window;
+   ev->event_window = event->event_window;
+   ev->root_window = event->root_window;
+   ev->timestamp = event->timestamp;
+
+   ev->x = event->x;
+   ev->y = event->y;
+   ev->root.x = event->root.x;
+   ev->root.y = event->root.y;
+
+   ev->multi.device = event->multi.device;
+   ev->multi.radius = event->multi.radius;
+   ev->multi.radius_x = event->multi.radius_x;
+   ev->multi.radius_y = event->multi.radius_y;
+   ev->multi.pressure = event->multi.pressure;
+   ev->multi.angle = event->multi.angle;
+
+   ev->multi.x = event->multi.x;
+   ev->multi.y = event->multi.y;
+   ev->multi.root.x = event->multi.root.x;
+   ev->multi.root.y = event->multi.root.y;
+   ev->dev = event->dev;
+   ev->buttons = ev->buttons;
+#endif
+  
+   ev->timestamp = (int)(ecore_time_get() * 1000);
+   ev->multi.radius = MAGIC_NUMBER;
+#if 0 
+   ev->window = e_comp->win;
+   ev->event_window = e_comp->win;
+   ev->root_window = e_comp->root;
+   ev->timestamp = (int)(ecore_time_get() * 1000);
+
+   ev->x = event->x;
+   ev->y = event->y;
+   ev->root.x = event->root.x;
+   ev->root.y = event->root.y;
+
+   ev->multi.device = event->multi.device;
+   ev->multi.radius = 1;
+   ev->multi.radius_x = 1;
+   ev->multi.radius_y = 1;
+   ev->multi.pressure = 1.0;
+   ev->multi.angle = 0.0;
+
+   ev->multi.x = event->x;
+   ev->multi.y = event->y;
+   ev->multi.root.x = event->x;
+   ev->multi.root.y = event->y;
+#endif
+DBG("same_screen: %d, (x, y: %d, %d), (root x, y: %d, %d), multi.device: %d", ev->same_screen, ev->x, ev->y, ev->root.x, ev->root.y, ev->multi.device);
+   ecore_event_add(type, ev, NULL, NULL); 
+   return EINA_FALSE;
+}
+
+static Eina_Bool
+_mouse_move_check(int type, Ecore_Event_Mouse_Move *event)
+{
+   Ecore_Event_Mouse_Move *ev;
+   if (event->multi.radius == MAGIC_NUMBER)
+     {
+        /* change value here */
+        event->x += 100;
+        event->y += 100;
+DBG("[KSW]>>>>>     [TRUE] same_screen: %d, (x, y: %d, %d), (root x, y: %d, %d), multi.device: %d", event->same_screen, event->x, event->y, event->root.x, event->root.y, event->multi.device);
+        return EINA_TRUE;
+     }
+
+   if (!(ev = malloc(sizeof(Ecore_Event_Mouse_Move))))
+     {
+        DBG("NOT ENOUGH MEMORY");
+        return EINA_FALSE;
+     }
+   memcpy(ev, event, sizeof(Ecore_Event_Mouse_Move));
+#if 0
+   ev->window = event->window;
+   ev->event_window = event->event_window;
+   ev->root_window = event->root_window;
+   ev->timestamp = event->timestamp;
+   ev->same_screen = event->same_screen - MAGIC_NUMBER;
+
+   ev->x = event->x;
+   ev->y = event->y;
+   ev->root.x = event->root.x;
+   ev->root.y = event->root.y;
+
+   ev->multi.device = event->multi.device;
+   ev->multi.radius = event->multi.radius;
+   ev->multi.radius_x = event->multi.radius_x;
+   ev->multi.radius_y = event->multi.radius_y;
+   ev->multi.pressure = event->multi.pressure;
+   ev->multi.angle = event->multi.angle;
+
+   ev->multi.x = event->multi.x;
+   ev->multi.y = event->multi.y;
+   ev->multi.root.x = event->multi.root.x;
+   ev->multi.root.y = event->multi.root.y;
+   ev->dev = event->dev;
+#endif
+
+#if 0
+   ev->window = e_comp->win;
+   ev->event_window = e_comp->win;
+   ev->root_window = e_comp->root;
+   ev->timestamp = (int)(ecore_time_get() * 1000);
+   ev->same_screen = event->same_screen - MAGIC_NUMBER;
+
+   ev->x = event->x;
+   ev->y = event->y;
+   ev->root.x = event->root.x;
+   ev->root.y = event->root.y;
+
+   ev->multi.device = event->multi.device;
+   ev->multi.radius = 1;
+   ev->multi.radius_x = 1;
+   ev->multi.radius_y = 1;
+   ev->multi.pressure = 1.0;
+   ev->multi.angle = 0.0;
+
+   ev->multi.x = event->x;
+   ev->multi.y = event->y;
+   ev->multi.root.x = event->x;
+   ev->multi.root.y = event->y;
+#endif
+   ev->timestamp = (int)(ecore_time_get() * 1000);
+   ev->multi.radius = MAGIC_NUMBER;
+DBG("same_screen: %d, (x, y: %d, %d), (root x, y: %d, %d), multi.device: %d", ev->same_screen, ev->x, ev->y, ev->root.x, ev->root.y, ev->multi.device);
+   ecore_event_add(type, ev, NULL, NULL); 
+   return EINA_FALSE;
+}
+static Eina_Bool
+_event_filter(void *data, void *loop_data, int type, void *event)
+{
+   DBG("[KSW] type: %d", type);
+
+   if (type == ECORE_EVENT_MOUSE_BUTTON_DOWN ||
+       type == ECORE_EVENT_MOUSE_BUTTON_UP)
+     {
+        return _mouse_button_check(type, event);
+     }
+   else if (type == ECORE_EVENT_MOUSE_MOVE)
+     {
+        return _mouse_move_check(type, event);
+     }
+
+   return EINA_TRUE;
+}
+
+static void
+_filter_init(void)
+{
+   ecore_event_filter_add(NULL, _event_filter, NULL, NULL);
+}
 EAPI void *
 e_modapi_init(E_Module *m)
 {
@@ -21,7 +214,8 @@ e_modapi_init(E_Module *m)
         DBG("Failed @ eina_log_domain_register()..!");
         return NULL;
      }
-
+   _gesture_init();
+   _filter_init();
    return m;
 }
 
