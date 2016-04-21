@@ -60,6 +60,7 @@ typedef struct {
      int x_beg, x_end;     // (x,y) coordinates when gesture begin
      int y_beg, y_end;     // (x,y) coordinates when gesture ends
      int state;            // 0 - begin, 1 - ongoing, 2 - ended
+     unsigned int event_time; //time stamp for the event
 } Gesture_Info;
 
 int _e_mod_log_init(void);
