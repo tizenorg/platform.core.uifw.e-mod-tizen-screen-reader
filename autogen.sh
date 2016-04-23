@@ -6,3 +6,4 @@ autoconf
 libtoolize --copy --force
 autoheader
 automake --foreign --add-missing --copy
+
