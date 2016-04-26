@@ -78,6 +78,7 @@ int E_EVENT_ATSPI_GESTURE_DETECTED;
 
 static Cover *cover;
 static Eina_List *handlers;
+static Ecore_Event_Filter *ef;
 static void _gesture_init(void);
 static void _gesture_shutdown(void);
 static void _hover_event_emit(Cover *cov, int state);
@@ -957,9 +958,36 @@ _tap_gestures_move(Ecore_Event_Mouse_Move *ev, Cover *cov)
 }
 
 static Eina_Bool
-_cb_mouse_down(void    *data EINA_UNUSED,
-               int      type EINA_UNUSED,
-               void    *event)
+_mouse_move(int type, Ecore_Event_Mouse_Button *event)
+{
+   Ecore_Event_Mouse_Move *ev = event;
+   Eina_Bool res = EINA_TRUE;
+
+   cover->event_time = ev->timestamp;
+   _flick_gesture_mouse_move(ev, cover);
+   _hover_gesture_mouse_move(ev, cover);
+   _tap_gestures_move(ev, cover);
+   return EINA_FALSE;
+}
+
+static Eina_Bool
+_mouse_button_up(int type, Ecore_Event_Mouse_Button *event)
+{
+   Ecore_Event_Mouse_Button *ev = event;
+
+   cover->n_taps--;
+   cover->event_time = ev->timestamp;
+
+   _flick_gesture_mouse_up(ev, cover);
+   _hover_gesture_mouse_up(ev, cover);
+   _tap_gestures_mouse_up(ev, cover);
+   DEBUG("single mouse up,taps: %d Multi :%d", cover->n_taps,ev->multi.device);
+
+   return EINA_FALSE;
+}
+
+static Eina_Bool
+_mouse_button_down(int type, Ecore_Event_Mouse_Button *event)
 {
    Ecore_Event_Mouse_Button *ev = event;
 
@@ -967,60 +995,37 @@ _cb_mouse_down(void    *data EINA_UNUSED,
    cover->event_time = ev->timestamp;
 
    DEBUG("single mouse down: taps: %d Multi :%d", cover->n_taps,ev->multi.device);
-
    _flick_gesture_mouse_down(ev, cover);
    _hover_gesture_mouse_down(ev, cover);
    _tap_gestures_mouse_down(ev, cover);
-
-   return ECORE_CALLBACK_PASS_ON;
+   return EINA_FALSE;
 }
 
 static Eina_Bool
-_cb_mouse_up(void    *data EINA_UNUSED,
-             int      type EINA_UNUSED,
-             void    *event)
+_event_filter(void *data, void *loop_data, int type, void *event)
 {
-   Ecore_Event_Mouse_Button *ev = event;
+   DBG("[KSW] type: %d", type);
 
-   cover->n_taps--;
-   cover->event_time = ev->timestamp;
+   if (type == ECORE_EVENT_MOUSE_BUTTON_DOWN)
+     {
+        return _mouse_button_down(type, event);
+     }
+   else if (type == ECORE_EVENT_MOUSE_BUTTON_UP)
+     {
+        return _mouse_button_up(type, event);
+     }
+   else if (type == ECORE_EVENT_MOUSE_MOVE)
+     {
+        return _mouse_move(type, event);
+     }
 
-   DEBUG("single mouse up,taps: %d Multi :%d", cover->n_taps,ev->multi.device);
-
-   _flick_gesture_mouse_up(ev, cover);
-   _hover_gesture_mouse_up(ev, cover);
-   _tap_gestures_mouse_up(ev, cover);
-
-   return ECORE_CALLBACK_PASS_ON;
-}
-
-static Eina_Bool
-_cb_mouse_move(void    *data EINA_UNUSED,
-               int      type EINA_UNUSED,
-               void    *event)
-{
-   Ecore_Event_Mouse_Move *ev = event;
-
-   cover->event_time = ev->timestamp;
-
-   _flick_gesture_mouse_move(ev, cover);
-   _hover_gesture_mouse_move(ev, cover);
-   _tap_gestures_move(ev, cover);
-
-   return ECORE_CALLBACK_PASS_ON;
+   return EINA_TRUE;
 }
 
 static void
 _events_init(void)
 {
-#define HANDLER_APPEND(event, cb) \
-   handlers = eina_list_append( \
-      handlers, ecore_event_handler_add(event, cb, NULL));
-   HANDLER_APPEND(ECORE_EVENT_MOUSE_BUTTON_DOWN, _cb_mouse_down);
-   HANDLER_APPEND(ECORE_EVENT_MOUSE_BUTTON_UP, _cb_mouse_up);
-   HANDLER_APPEND(ECORE_EVENT_MOUSE_MOVE, _cb_mouse_move);
-#undef APPEND_HANDLER
-
+   ef = ecore_event_filter_add(NULL, _event_filter, NULL, NULL);
    if (!E_EVENT_ATSPI_GESTURE_DETECTED)
       E_EVENT_ATSPI_GESTURE_DETECTED = ecore_event_type_new();
 }
@@ -1028,21 +1033,7 @@ _events_init(void)
 static void
 _events_shutdown(void)
 {
-   E_FREE_LIST(handlers, ecore_event_handler_del);
-}
-
-static Evas_Object *gesture_rectangle;
-
-static void
-_resize_canvas_gesture(Ecore_Evas *ee EINA_UNUSED)
-{
-   int x, y, w, h;
-   ecore_evas_geometry_get(e_comp->ee, &x, &y, &w, &h);
-   DEBUG("Resizing to x: %i, y: %i, w: %i, h:%i", x, y, w, h);
-   // For testing purpose
-   evas_object_geometry_set(gesture_rectangle, x, y, 600,800);
-
-   //evas_object_geometry_set(gesture_rectangle, x, y, w, h);
+   ecore_event_filter_del(ef);
 }
 
 static void
@@ -1056,22 +1047,11 @@ _gesture_init()
         ERROR("Fatal Memory error!");
         return;
      }
-
-   gesture_rectangle = evas_object_rectangle_add(e_comp->evas);
-   evas_object_layer_set(gesture_rectangle, E_LAYER_MAX);
-   evas_object_repeat_events_set(gesture_rectangle, EINA_FALSE);
-   _resize_canvas_gesture(NULL);
-   evas_object_color_set(gesture_rectangle, 0, 255, 0, 100);
-   evas_object_show(gesture_rectangle);
-   cover->gesture_rect = gesture_rectangle;
-   ecore_evas_callback_resize_set(e_comp->ee, _resize_canvas_gesture);
 }
 
 static void
 _gesture_shutdown(void)
 {
-   evas_object_del(cover->gesture_rect);
-   gesture_rectangle = NULL;
    if (cover->tap_gesture_data.timer)
      ecore_timer_del(cover->tap_gesture_data.timer);
    if (cover->hover_gesture.timer)
