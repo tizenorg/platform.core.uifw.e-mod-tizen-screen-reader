@@ -18,6 +18,8 @@ _e_mod_config_new(void)
    _e_mod_config->two_fingers_hover_longpress_timeout = 0.1;
    _e_mod_config->one_finger_tap_timeout = 0.4;
    _e_mod_config->one_finger_tap_radius = 100;
+   _e_mod_config->two_finger_flick_to_scroll_timeout = 100;
+   _e_mod_config->two_finger_flick_to_scroll_min_length = 50;
 }
 
 int _e_mod_atspi_config_init(void)
