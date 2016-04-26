@@ -17,6 +17,10 @@ struct _Gestures_Config
    double one_finger_tap_timeout;
    // tap radius(in pixels)
    int one_finger_tap_radius;
+   // to activate flick gesture by 2 fingers (it is hotfix - gestures need serious refactoring)
+   int two_finger_flick_to_scroll_timeout;
+   // after mowing this pixels flick two finger flick to scroll gesture is started
+   int two_finger_flick_to_scroll_min_length;
 };
 
 typedef struct _Gestures_Config Gestures_Config;
