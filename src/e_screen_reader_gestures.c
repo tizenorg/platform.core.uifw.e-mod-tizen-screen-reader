@@ -5,6 +5,7 @@
 
 #define HISTORY_MAX 8
 #define LONGPRESS_TIMEOUT 0.4
+double MAGIC_NUMBER = 987654321.0;
 
 typedef enum {
      FLICK_DIRECTION_UNDEFINED,
@@ -49,6 +50,11 @@ struct _Cover
                                    //         still touching screen
         Eina_Bool finger_out[3];   // finger is out of the finger boundary
         Eina_Bool return_flick[3];
+        Eina_Bool flick_to_scroll;
+        Ecore_Event_Mouse_Button *ev_first_down;
+        Ecore_Event_Mouse_Button *ev_up;
+        int flick_to_scroll_last_x;
+        int flick_to_scroll_last_y;
    } flick_gesture;
 
    struct {
@@ -71,6 +77,13 @@ struct _Cover
         int x_org[3], y_org[3];    // coordinates of first tap
         gesture_type_e tap_type;
    } tap_gesture_data;
+
+   struct {
+        int n_taps;
+        Eina_Bool double_tap;
+        Ecore_Event_Mouse_Button *ev_down;
+        Eina_Bool drag_start;
+   } tap_n_hold_gesture_data;
 };
 typedef struct _Cover Cover;
 
@@ -78,6 +91,7 @@ int E_EVENT_ATSPI_GESTURE_DETECTED;
 
 static Cover *cover;
 static Eina_List *handlers;
+static Ecore_Event_Filter *ef;
 static void _gesture_init(void);
 static void _gesture_shutdown(void);
 static void _hover_event_emit(Cover *cov, int state);
@@ -86,6 +100,41 @@ static void
 _gesture_info_free(void *data, void *info)
 {
    free(data);
+}
+
+static void _emit_mouse_move_event ( Ecore_Event_Mouse_Button *ev_btn)
+{
+   Ecore_Event_Mouse_Move *ev_move;
+   if (!(ev_move = malloc(sizeof(Ecore_Event_Mouse_Move))))
+     {
+        DEBUG("NOT ENOUGH MEMORY");
+        return ;
+     }
+   ev_move->window = ev_btn->window;
+   ev_move->event_window = ev_btn->event_window;
+   ev_move->root_window = ev_btn->root_window;
+   ev_move->same_screen = ev_btn->same_screen;
+   ev_move->dev = ev_btn->dev;
+
+   ev_move->x = ev_btn->x;
+   ev_move->y = ev_btn->y;
+   ev_move->root.x = ev_btn->root.x;
+   ev_move->root.y = ev_btn->root.y;
+
+   ev_move->multi.device = ev_btn->multi.device;
+
+   ev_move->multi.radius_x = ev_btn->multi.radius_x;
+   ev_move->multi.radius_y = ev_btn->multi.radius_y;
+   ev_move->multi.pressure = ev_btn->multi.pressure;
+   ev_move->multi.angle = ev_btn->multi.angle;
+
+   ev_move->multi.x = ev_btn->multi.x;
+   ev_move->multi.y = ev_btn->multi.y;
+   ev_move->multi.root.x = ev_btn->multi.root.x;
+   ev_move->multi.root.y = ev_btn->multi.root.y;
+   ev_move->timestamp = (int)(ecore_time_get() * 1000);
+   ev_move->multi.radius = MAGIC_NUMBER + 10.0;
+   ecore_event_add(ECORE_EVENT_MOUSE_MOVE, ev_move, NULL, NULL);
 }
 
 static void _event_emit(Gesture g, int x, int y, int x_e, int y_e, int state, unsigned int event_time)
@@ -114,11 +163,18 @@ _flick_gesture_mouse_down(Ecore_Event_Mouse_Button *ev, Cover *cov)
         cov->flick_gesture.x_org[0] = ev->root.x;
         cov->flick_gesture.y_org[0] = ev->root.y;
         cov->flick_gesture.timestamp[0] = ev->timestamp;
+        cov->flick_gesture.flick_to_scroll = EINA_FALSE;
         cov->flick_gesture.n_fingers = 1;
         cov->flick_gesture.n_fingers_left = 1;
         cov->flick_gesture.dir = FLICK_DIRECTION_UNDEFINED;
         cov->flick_gesture.finger_out[0] = EINA_FALSE;
         cov->flick_gesture.return_flick[0] = EINA_FALSE;
+        if (!(cov->flick_gesture.ev_first_down = malloc(sizeof(Ecore_Event_Mouse_Button))))
+          {
+             DEBUG("NOT ENOUGH MEMORY");
+             return ;
+          }
+        memcpy (cov->flick_gesture.ev_first_down, ev, sizeof(Ecore_Event_Mouse_Button));
      }
    else if (cov->flick_gesture.state == GESTURE_ONGOING)
      {
@@ -297,6 +353,17 @@ _flick_gesture_mouse_up(Ecore_Event_Mouse_Button *ev, Cover *cov)
              goto end;
           }
 
+        if (cov->flick_gesture.flick_to_scroll)
+          {
+             if (ev->multi.device == 1)
+               {
+                  cov->flick_gesture.flick_to_scroll_last_x = ev->x;
+                  cov->flick_gesture.flick_to_scroll_last_y = ev->y;
+               }
+             cov->flick_gesture.state = GESTURE_ABORTED;
+             goto end;
+          }
+
         // check if flick for given finger is valid
         if (!_flick_gesture_time_check(ev->timestamp,
                                        cov->flick_gesture.timestamp[i]))
@@ -356,11 +423,48 @@ _flick_gesture_mouse_up(Ecore_Event_Mouse_Button *ev, Cover *cov)
 
 end:
    // if no finger is touching a screen, gesture will be reseted.
-   if ((cov->flick_gesture.state == GESTURE_ABORTED) && (cov->n_taps == 0))
+   if ((cov->flick_gesture.state == GESTURE_ABORTED))
      {
+        if (cov->flick_gesture.flick_to_scroll)
+          {
+             Ecore_Event_Mouse_Button *event;
+             if (!(event = malloc(sizeof(Ecore_Event_Mouse_Button))))
+               {
+                  DBG("NOT ENOUGH MEMORY");
+                  return ;
+               }
+             memcpy(event, ev, sizeof(Ecore_Event_Mouse_Button));
+             event->x = cov->flick_gesture.flick_to_scroll_last_x;
+             event->y = cov->flick_gesture.flick_to_scroll_last_y;
+             event->multi.radius += MAGIC_NUMBER;
+             cov->flick_gesture.flick_to_scroll = EINA_FALSE;
+             ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_UP, event, NULL, NULL);
+          }
         DEBUG("Restet flick gesture");
-        cov->flick_gesture.state = GESTURE_NOT_STARTED;
+        if (cov->n_taps == 0)
+           cov->flick_gesture.state = GESTURE_NOT_STARTED;
      }
+}
+
+static Eina_Bool _flick_to_scroll_gesture_conditions_met(Ecore_Event_Mouse_Move * ev, int gesture_timestamp, int dx, int dy)
+{
+   if (ev->timestamp - gesture_timestamp > _e_mod_config->two_finger_flick_to_scroll_timeout)
+      if (abs(dx) > _e_mod_config->two_finger_flick_to_scroll_min_length || abs(dy) > _e_mod_config->two_finger_flick_to_scroll_min_length)
+         return EINA_TRUE;
+
+   return EINA_FALSE;
+}
+
+static void
+start_scroll(int x, int y, Cover *cov)
+{
+   cov->flick_gesture.ev_first_down->x = x;
+   cov->flick_gesture.ev_first_down->y = y;
+   _emit_mouse_move_event(cov->flick_gesture.ev_first_down);
+   cov->flick_gesture.ev_first_down->timestamp = (int)(ecore_time_get() * 1000);
+   cov->flick_gesture.ev_first_down->multi.radius += MAGIC_NUMBER;
+
+   ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_DOWN, cov->flick_gesture.ev_first_down, NULL, NULL);
 }
 
 static void
@@ -383,6 +487,17 @@ _flick_gesture_mouse_move(Ecore_Event_Mouse_Move *ev, Cover *cov)
                   return;
                }
           }
+         int dxx = ev->root.x - cov->flick_gesture.x_org[i];
+         int dyy = ev->root.y - cov->flick_gesture.y_org[i];
+         if (i == 1) {
+            if (cov->flick_gesture.flick_to_scroll || _flick_to_scroll_gesture_conditions_met(ev, cov->flick_gesture.timestamp[i], dxx, dyy)) {
+               if (!cov->flick_gesture.flick_to_scroll) {
+                  start_scroll(ev->x, ev->y, cov);
+                  cov->flick_gesture.flick_to_scroll = EINA_TRUE;
+               }
+               return;
+            }
+         }
          if(!cov->flick_gesture.finger_out[i])
             {
                int dx = ev->root.x - cov->flick_gesture.x_org[i];
@@ -578,6 +693,16 @@ static void
 _hover_event_emit(Cover *cov, int state)
 {
    DEBUG("Emit hover event");
+   if (cov->tap_n_hold_gesture_data.double_tap)
+     {
+        _emit_mouse_move_event(cov->tap_n_hold_gesture_data.ev_down);
+        cov->tap_n_hold_gesture_data.ev_down->multi.radius += MAGIC_NUMBER;
+        cov->tap_n_hold_gesture_data.drag_start = EINA_TRUE;
+        ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_DOWN, cov->tap_n_hold_gesture_data.ev_down, NULL, NULL);
+
+     }
+   cov->tap_n_hold_gesture_data.double_tap = EINA_FALSE;
+   cov->tap_n_hold_gesture_data.n_taps = 0;
    int ax = 0, ay = 0, j;
    for (j = 0; j < cov->hover_gesture.n_fingers; j++)
      {
@@ -734,6 +859,9 @@ _on_tap_timer_expire(void *data)
    Cover *cov = data;
    DEBUG("Timer expired");
 
+   if (cov->tap_n_hold_gesture_data.n_taps == 2 && cov->tap_gesture_data.tap_type == ONE_FINGER_GESTURE)
+      cov->tap_n_hold_gesture_data.double_tap = EINA_TRUE;
+
    if (cov->tap_gesture_data.started && !cov->tap_gesture_data.pressed)
      _tap_event_emit(cov);
 
@@ -802,6 +930,15 @@ _tap_gestures_mouse_down(Ecore_Event_Mouse_Button *ev, Cover *cov)
          cov->tap_gesture_data.finger[1] = -1;
          cov->tap_gesture_data.finger[2] = -1;
          cov->tap_gesture_data.n_taps = 0;
+         cov->tap_n_hold_gesture_data.n_taps = 1;
+         cov->tap_n_hold_gesture_data.double_tap = EINA_FALSE;
+         cov->tap_n_hold_gesture_data.drag_start = EINA_FALSE;
+         if (!(cov->tap_n_hold_gesture_data.ev_down = malloc(sizeof(Ecore_Event_Mouse_Button))))
+           {
+              DEBUG("NOT ENOUGH MEMORY");
+              return ;
+           }
+         memcpy (cov->tap_n_hold_gesture_data.ev_down, ev, sizeof(Ecore_Event_Mouse_Button));
          cov->tap_gesture_data.timer = ecore_timer_add(
                                            _e_mod_config->one_finger_tap_timeout,
                                            _on_tap_timer_expire, cov);
@@ -830,6 +967,7 @@ _tap_gestures_mouse_down(Ecore_Event_Mouse_Button *ev, Cover *cov)
 
                cov->tap_gesture_data.x_org[0] = ev->root.x;
                cov->tap_gesture_data.y_org[0] = ev->root.y;
+               cov->tap_n_hold_gesture_data.n_taps++;
             }
          else if (cov->tap_gesture_data.finger[1] == -1 ||
                   cov->tap_gesture_data.finger[1] == ev->multi.device)
@@ -957,70 +1095,102 @@ _tap_gestures_move(Ecore_Event_Mouse_Move *ev, Cover *cov)
 }
 
 static Eina_Bool
-_cb_mouse_down(void    *data EINA_UNUSED,
-               int      type EINA_UNUSED,
-               void    *event)
+_mouse_move(int type, Ecore_Event_Mouse_Move *event)
+{
+   Ecore_Event_Mouse_Move *ev = event;
+   if (ev->multi.radius >= MAGIC_NUMBER || cover->flick_gesture.flick_to_scroll || cover->tap_n_hold_gesture_data.drag_start)
+     {
+        if (ev->multi.radius >= MAGIC_NUMBER) ev->multi.radius -= MAGIC_NUMBER;
+        return EINA_TRUE;
+     }
+
+   cover->event_time = ev->timestamp;
+   _flick_gesture_mouse_move(ev, cover);
+   _hover_gesture_mouse_move(ev, cover);
+   _tap_gestures_move(ev, cover);
+   return EINA_FALSE;
+}
+
+static Eina_Bool
+_mouse_button_up(int type, Ecore_Event_Mouse_Button *event)
 {
    Ecore_Event_Mouse_Button *ev = event;
+
+   if (event->multi.radius >= MAGIC_NUMBER)
+     {
+        event->multi.radius -= MAGIC_NUMBER;
+        return EINA_TRUE;
+     }
+   if (cover->tap_n_hold_gesture_data.drag_start)
+     {
+        Ecore_Event_Mouse_Button *ev_up;
+        if (!(ev_up = malloc(sizeof(Ecore_Event_Mouse_Button))))
+          {
+           DEBUG("NOT ENOUGH MEMORY");
+             return EINA_FALSE;
+          }
+        memcpy(ev_up, ev, sizeof(Ecore_Event_Mouse_Button));
+        ev_up->multi.radius += MAGIC_NUMBER;
+        ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_UP, ev_up, NULL, NULL);
+        cover->tap_n_hold_gesture_data.drag_start = EINA_FALSE;
+     }
+   cover->n_taps--;
+   cover->event_time = ev->timestamp;
+
+   _flick_gesture_mouse_up(ev, cover);
+   _hover_gesture_mouse_up(ev, cover);
+   _tap_gestures_mouse_up(ev, cover);
+   DEBUG("single mouse up,taps: %d Multi :%d", cover->n_taps,ev->multi.device);
+
+   return EINA_FALSE;
+}
+
+static Eina_Bool
+_mouse_button_down(int type, Ecore_Event_Mouse_Button *event)
+{
+   Ecore_Event_Mouse_Button *ev = event;
+
+   if (event->multi.radius >= MAGIC_NUMBER)
+     {
+        ev->multi.radius -= MAGIC_NUMBER;
+        return EINA_TRUE;
+     }
 
    cover->n_taps++;
    cover->event_time = ev->timestamp;
 
    DEBUG("single mouse down: taps: %d Multi :%d", cover->n_taps,ev->multi.device);
-
    _flick_gesture_mouse_down(ev, cover);
    _hover_gesture_mouse_down(ev, cover);
    _tap_gestures_mouse_down(ev, cover);
-
-   return ECORE_CALLBACK_PASS_ON;
+   return EINA_FALSE;
 }
 
 static Eina_Bool
-_cb_mouse_up(void    *data EINA_UNUSED,
-             int      type EINA_UNUSED,
-             void    *event)
+_event_filter(void *data, void *loop_data, int type, void *event)
 {
-   Ecore_Event_Mouse_Button *ev = event;
+   DBG("[KSW] type: %d", type);
 
-   cover->n_taps--;
-   cover->event_time = ev->timestamp;
+   if (type == ECORE_EVENT_MOUSE_BUTTON_DOWN)
+     {
+        return _mouse_button_down(type, event);
+     }
+   else if (type == ECORE_EVENT_MOUSE_BUTTON_UP)
+     {
+        return _mouse_button_up(type, event);
+     }
+   else if (type == ECORE_EVENT_MOUSE_MOVE)
+     {
+        return _mouse_move(type, event);
+     }
 
-   DEBUG("single mouse up,taps: %d Multi :%d", cover->n_taps,ev->multi.device);
-
-   _flick_gesture_mouse_up(ev, cover);
-   _hover_gesture_mouse_up(ev, cover);
-   _tap_gestures_mouse_up(ev, cover);
-
-   return ECORE_CALLBACK_PASS_ON;
-}
-
-static Eina_Bool
-_cb_mouse_move(void    *data EINA_UNUSED,
-               int      type EINA_UNUSED,
-               void    *event)
-{
-   Ecore_Event_Mouse_Move *ev = event;
-
-   cover->event_time = ev->timestamp;
-
-   _flick_gesture_mouse_move(ev, cover);
-   _hover_gesture_mouse_move(ev, cover);
-   _tap_gestures_move(ev, cover);
-
-   return ECORE_CALLBACK_PASS_ON;
+   return EINA_TRUE;
 }
 
 static void
 _events_init(void)
 {
-#define HANDLER_APPEND(event, cb) \
-   handlers = eina_list_append( \
-      handlers, ecore_event_handler_add(event, cb, NULL));
-   HANDLER_APPEND(ECORE_EVENT_MOUSE_BUTTON_DOWN, _cb_mouse_down);
-   HANDLER_APPEND(ECORE_EVENT_MOUSE_BUTTON_UP, _cb_mouse_up);
-   HANDLER_APPEND(ECORE_EVENT_MOUSE_MOVE, _cb_mouse_move);
-#undef APPEND_HANDLER
-
+   ef = ecore_event_filter_add(NULL, _event_filter, NULL, NULL);
    if (!E_EVENT_ATSPI_GESTURE_DETECTED)
       E_EVENT_ATSPI_GESTURE_DETECTED = ecore_event_type_new();
 }
@@ -1028,21 +1198,7 @@ _events_init(void)
 static void
 _events_shutdown(void)
 {
-   E_FREE_LIST(handlers, ecore_event_handler_del);
-}
-
-static Evas_Object *gesture_rectangle;
-
-static void
-_resize_canvas_gesture(Ecore_Evas *ee EINA_UNUSED)
-{
-   int x, y, w, h;
-   ecore_evas_geometry_get(e_comp->ee, &x, &y, &w, &h);
-   DEBUG("Resizing to x: %i, y: %i, w: %i, h:%i", x, y, w, h);
-   // For testing purpose
-   evas_object_geometry_set(gesture_rectangle, x, y, 600,800);
-
-   //evas_object_geometry_set(gesture_rectangle, x, y, w, h);
+   ecore_event_filter_del(ef);
 }
 
 static void
@@ -1056,22 +1212,11 @@ _gesture_init()
         ERROR("Fatal Memory error!");
         return;
      }
-
-   gesture_rectangle = evas_object_rectangle_add(e_comp->evas);
-   evas_object_layer_set(gesture_rectangle, E_LAYER_MAX);
-   evas_object_repeat_events_set(gesture_rectangle, EINA_FALSE);
-   _resize_canvas_gesture(NULL);
-   evas_object_color_set(gesture_rectangle, 0, 255, 0, 100);
-   evas_object_show(gesture_rectangle);
-   cover->gesture_rect = gesture_rectangle;
-   ecore_evas_callback_resize_set(e_comp->ee, _resize_canvas_gesture);
 }
 
 static void
 _gesture_shutdown(void)
 {
-   evas_object_del(cover->gesture_rect);
-   gesture_rectangle = NULL;
    if (cover->tap_gesture_data.timer)
      ecore_timer_del(cover->tap_gesture_data.timer);
    if (cover->hover_gesture.timer)
