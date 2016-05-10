@@ -13,7 +13,7 @@
 #define E_ATSPI_BUS_TIMEOUT 4000
 
 #undef DBG
-int _eina_log_dom = -1;
+int _eina_log_dom = 0;
 #define DBG(...)  do EINA_LOG_DOM_DBG(_eina_log_dom, __VA_ARGS__); while(0)
 
 static Eina_Bool g_gesture_navi;
@@ -179,9 +179,75 @@ _on_name_release_cb(void *data EINA_UNUSED, const Eldbus_Message *msg, Eldbus_Pe
 }
 
 static int
+_e_mod_submodules_init(void)
+{
+   INFO("Init subsystems...");
+
+   if (_e_mod_atspi_config_init())
+     goto fail;
+   if (_e_mod_atspi_gestures_init())
+     goto fail_gestures;
+
+   g_gesture_navi = EINA_TRUE;
+   return 0;
+fail_gestures:
+   ERROR("Gestures submodule initialization failed.");
+   _e_mod_atspi_config_shutdown();
+fail:
+   ERROR("Module initialization failed.");
+   return -1;
+}
+
+static void
+_e_mod_submodules_shutdown(void)
+{
+   INFO("Shutdown subsystems...");
+   g_gesture_navi = EINA_FALSE;
+   _e_mod_atspi_config_save();
+   _e_mod_atspi_config_shutdown();
+   _e_mod_atspi_gestures_shutdown();
+}
+
+
+static Eldbus_Message *
+_sc_enable(const Eldbus_Service_Interface *iface, const Eldbus_Message *msg)
+{
+   INFO("iface=%p.", iface);
+   INFO("_sc_enable Method called");
+   Eldbus_Message *reply = eldbus_message_method_return_new(msg);
+   Eina_Bool bool_val = EINA_FALSE;
+   if (!eldbus_message_arguments_get(msg, "b", &bool_val))
+     printf("eldbus_message_arguments_get() error\n");
+   eldbus_message_arguments_append(reply, "b", bool_val);
+   if (bool_val)
+   {
+      INFO("Initialize events");
+      _e_mod_submodules_init();
+   }
+   else
+   {
+      INFO("Shutdown events");
+      _e_mod_submodules_shutdown();
+   }
+   return reply;
+}
+
+static const Eldbus_Method methods[] = {
+      { "ScreenReaderEnabled", ELDBUS_ARGS({"b", "bool"}), ELDBUS_ARGS({"b", "bool"}),
+        _sc_enable
+      },
+      { }
+};
+
+static const Eldbus_Service_Interface_Desc iface_desc = {
+      E_A11Y_SERVICE_NAVI_IFC_NAME, methods
+};
+
+static int
 _fetch_a11y_bus_address(void)
 {
    if (conn) return 0;
+   Eldbus_Service_Interface *iface = NULL;
    conn = eldbus_address_connection_get("unix:path=/var/run/dbus/system_bus_socket");
    if (!conn)
      {
@@ -190,10 +256,12 @@ _fetch_a11y_bus_address(void)
      }
    INFO("Connected to: unix:path=/var/run/dbus/system_bus_socket");
 
-   if (!conn) return 0;
+   if (!conn) goto fail;
    eldbus_name_request(conn, E_A11Y_SERVICE_BUS_NAME,
                        ELDBUS_NAME_REQUEST_FLAG_DO_NOT_QUEUE, _on_name_cb, NULL);
+   iface = eldbus_service_interface_register(conn, E_A11Y_SERVICE_NAVI_OBJ_PATH, &iface_desc);
 
+   INFO("iface=%p.", iface);
    INFO("AT-SPI dbus service initialized.");
    return 0;
 fail:
@@ -229,34 +297,39 @@ int _e_mod_atspi_dbus_init(void)
    return _fetch_a11y_bus_address();
 }
 
+int _e_mod_log_init(void)
+{
+   if (!_eina_log_dom)
+     {
+        _eina_log_dom = eina_log_domain_register("e_screen_reader", EINA_COLOR_YELLOW);
+        if (_eina_log_dom  < 0)
+          {
+             DBG("Failed @ eina_log_domain_register()..!");
+             return -1;
+          }
+     }
+   return 0;
+}
+
+void _e_mod_log_shutdown(void)
+{
+   if (_eina_log_dom)
+     {
+        eina_log_domain_unregister(_eina_log_dom);
+        _eina_log_dom = 0;
+     }
+}
+
 EAPI void *
 e_modapi_init(E_Module *m)
 {
-   _eina_log_dom = eina_log_domain_register("e_screen_reader", EINA_COLOR_YELLOW);
-   if (!_eina_log_dom)
-     {
-        DBG("Failed @ eina_log_domain_register()..!");
-        return NULL;
-     }
-
-   if (_e_mod_atspi_config_init())
-     goto fail;
-   if (_e_mod_atspi_gestures_init())
-     goto fail_gestures;
+   _e_mod_log_init();
    if (_e_mod_atspi_dbus_init())
-     goto fail_dbus;
+     goto fail;
 
-   _events_init();
-   g_gesture_navi = EINA_TRUE;
    return m;
-
-fail_gestures:
-   ERROR("Gestures submodule initialization failed.");
-   _e_mod_atspi_config_shutdown();
 fail:
-   ERROR("Module initialization failed.");
-fail_dbus:
-   ERROR("Dbus submodule initialization failed.");
+   ERROR("Dbus initialization failed.");
 
    return NULL;
 }
@@ -264,17 +337,7 @@ fail_dbus:
 EAPI int
 e_modapi_shutdown(E_Module *m EINA_UNUSED)
 {
-   if (_eina_log_dom)
-     {
-        eina_log_domain_unregister(_eina_log_dom);
-        _eina_log_dom = 0;
-     }
-
-   _events_shutdown();
-   g_gesture_navi = EINA_FALSE;
-   _e_mod_atspi_config_save();
-   _e_mod_atspi_config_shutdown();
-   _e_mod_atspi_gestures_shutdown();
+   _e_mod_log_shutdown();
    _e_mod_atspi_dbus_shutdown();
 
    return 1;
