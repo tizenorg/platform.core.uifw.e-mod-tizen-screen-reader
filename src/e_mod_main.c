@@ -4,13 +4,9 @@
 #include <e_screen_reader_config.h>
 #include <e_screen_reader_private.h>
 
-#define E_A11Y_SERVICE_BUS_NAME "org.enlightnement.wm-screen-reader"
+#define E_A11Y_SERVICE_BUS_NAME "org.enlightenment.wm-screen-reader"
 #define E_A11Y_SERVICE_NAVI_IFC_NAME "org.tizen.GestureNavigation"
 #define E_A11Y_SERVICE_NAVI_OBJ_PATH "/org/tizen/GestureNavigation"
-#define E_A11Y_SERVICE_TRACKER_IFC_NAME "org.tizen.WindowTracker"
-#define E_A11Y_SERVICE_TRACKER_OBJ_PATH "/org/tizen/WindowTracker"
-
-#define E_ATSPI_BUS_TIMEOUT 4000
 
 #undef DBG
 int _eina_log_dom = 0;
@@ -19,12 +15,39 @@ int _eina_log_dom = 0;
 static Eina_Bool g_gesture_navi;
 static Eina_List *handlers;
 Eldbus_Connection *conn = NULL;
+Eldbus_Service_Interface *iface = NULL;
 
 EAPI E_Module_Api e_modapi =
 {
    E_MODULE_API_VERSION,
    "Screen Reader Module of Window Manager"
 };
+
+#define GESTURE_DETECTED_SIGNAL 0
+static Eldbus_Message *_sc_enable(const Eldbus_Service_Interface *iface, const Eldbus_Message *msg);
+
+static const Eldbus_Method methods[] = {
+      { "ScreenReaderEnabled", ELDBUS_ARGS({"b", "bool"}), ELDBUS_ARGS({"b", "bool"}),
+        _sc_enable
+      },
+      { }
+};
+
+
+static const Eldbus_Signal signals[] = {
+   [GESTURE_DETECTED_SIGNAL] = {"GestureDetected",
+                                ELDBUS_ARGS({"i", "type"},
+                                            {"i", "x_beg"},{"i", "y_beg"},
+                                            {"i", "x_end"}, {"i", "y_end"},
+                                            {"i", "state"}, {"u", "event_time"}),
+                                            0},
+   { }
+};
+
+static const Eldbus_Service_Interface_Desc iface_desc = {
+      E_A11Y_SERVICE_NAVI_IFC_NAME, methods, signals
+};
+
 
 /* Use this util function for gesture enum to string conversion */
 static const char *_gesture_enum_to_string(Gesture g)
@@ -113,26 +136,14 @@ int _e_mod_atspi_dbus_broadcast(Gesture_Info *gi)
 {
    /* Implement this for gesture broadcast */
    DEBUG("atspi bus broadcast callback");
-   const char *name;
-   Eldbus_Message *msg;
-
    if (!conn) return -1;
-   name = _gesture_enum_to_string(gi->type);
-   if (!name) return -1;
+   if (!iface) return -1;
 
-   msg = eldbus_message_signal_new(E_A11Y_SERVICE_NAVI_OBJ_PATH,
-                                    E_A11Y_SERVICE_NAVI_IFC_NAME, "GestureDetected");
-   if (!msg) return -1;
+   eldbus_service_signal_emit(iface, GESTURE_DETECTED_SIGNAL, (int)gi->type, gi->x_beg, gi->y_beg,
+                              gi->x_end, gi->y_end, gi->state, gi->event_time);
 
-   if (!eldbus_message_arguments_append(msg, "iiiiiiu", (int)gi->type, gi->x_beg, gi->y_beg, gi->x_end, gi->y_end, gi->state, gi->event_time))
-     {
-        eldbus_message_unref(msg);
-        INFO("Append failed");
-        return -1;
-     }
-
-   eldbus_connection_send(conn, msg, NULL, NULL, 0);
-   INFO("GestureDetected %s %d (%d %d %d %d %d %u)", name, (int)gi->type, gi->x_beg, gi->y_beg, gi->x_end, gi->y_end, gi->state, gi->event_time);
+   INFO("GestureDetected %s %d (%d %d %d %d %d %u)", _gesture_enum_to_string(gi->type),
+        (int)gi->type, gi->x_beg, gi->y_beg, gi->x_end, gi->y_end, gi->state, gi->event_time);
    return 0;
 }
 
@@ -150,7 +161,7 @@ _gesture_cb(void    *data,
 }
 
 static void
-_events_init(void)
+_atspi_gesture_init(void)
 {
 #define HANDLER_APPEND(event, cb) \
    handlers = eina_list_append( \
@@ -161,7 +172,7 @@ _events_init(void)
 }
 
 static void
-_events_shutdown(void)
+_atspi_gesture_shutdown(void)
 {
    E_FREE_LIST(handlers, ecore_event_handler_del);
 }
@@ -188,8 +199,10 @@ _e_mod_submodules_init(void)
    if (_e_mod_atspi_gestures_init())
      goto fail_gestures;
 
+   _atspi_gesture_init();
    g_gesture_navi = EINA_TRUE;
    return 0;
+
 fail_gestures:
    ERROR("Gestures submodule initialization failed.");
    _e_mod_atspi_config_shutdown();
@@ -202,6 +215,7 @@ static void
 _e_mod_submodules_shutdown(void)
 {
    INFO("Shutdown subsystems...");
+   _atspi_gesture_shutdown();
    g_gesture_navi = EINA_FALSE;
    _e_mod_atspi_config_save();
    _e_mod_atspi_config_shutdown();
@@ -217,7 +231,7 @@ _sc_enable(const Eldbus_Service_Interface *iface, const Eldbus_Message *msg)
    Eldbus_Message *reply = eldbus_message_method_return_new(msg);
    Eina_Bool bool_val = EINA_FALSE;
    if (!eldbus_message_arguments_get(msg, "b", &bool_val))
-     printf("eldbus_message_arguments_get() error\n");
+     ERROR("eldbus_message_arguments_get() error\n");
    eldbus_message_arguments_append(reply, "b", bool_val);
    if (bool_val)
    {
@@ -232,22 +246,10 @@ _sc_enable(const Eldbus_Service_Interface *iface, const Eldbus_Message *msg)
    return reply;
 }
 
-static const Eldbus_Method methods[] = {
-      { "ScreenReaderEnabled", ELDBUS_ARGS({"b", "bool"}), ELDBUS_ARGS({"b", "bool"}),
-        _sc_enable
-      },
-      { }
-};
-
-static const Eldbus_Service_Interface_Desc iface_desc = {
-      E_A11Y_SERVICE_NAVI_IFC_NAME, methods
-};
-
 static int
 _fetch_a11y_bus_address(void)
 {
    if (conn) return 0;
-   Eldbus_Service_Interface *iface = NULL;
    conn = eldbus_address_connection_get("unix:path=/var/run/dbus/system_bus_socket");
    if (!conn)
      {
