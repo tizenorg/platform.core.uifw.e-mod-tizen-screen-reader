@@ -1202,8 +1202,6 @@ _events_shutdown(void)
 static void
 _gesture_init()
 {
-   DEBUG("Gesture Rect Creation init.");
-
    cover = E_NEW(Cover, 1);
    if (!cover)
      {
