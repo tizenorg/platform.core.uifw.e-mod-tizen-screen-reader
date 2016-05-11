@@ -188,8 +188,10 @@ _e_mod_submodules_init(void)
    if (_e_mod_atspi_gestures_init())
      goto fail_gestures;
 
+   _events_init();
    g_gesture_navi = EINA_TRUE;
    return 0;
+
 fail_gestures:
    ERROR("Gestures submodule initialization failed.");
    _e_mod_atspi_config_shutdown();
@@ -202,6 +204,7 @@ static void
 _e_mod_submodules_shutdown(void)
 {
    INFO("Shutdown subsystems...");
+   _events_shutdown();
    g_gesture_navi = EINA_FALSE;
    _e_mod_atspi_config_save();
    _e_mod_atspi_config_shutdown();
