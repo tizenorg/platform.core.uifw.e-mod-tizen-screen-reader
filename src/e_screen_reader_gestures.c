@@ -426,18 +426,28 @@ end:
      {
         if (cov->flick_gesture.flick_to_scroll)
           {
-             Ecore_Event_Mouse_Button *event;
-             if (!(event = malloc(sizeof(Ecore_Event_Mouse_Button))))
+             Ecore_Event_Mouse_Button *event1, *event2;
+             if (!(event1 = malloc(sizeof(Ecore_Event_Mouse_Button))))
                {
                   DBG("NOT ENOUGH MEMORY");
                   return ;
                }
-             memcpy(event, ev, sizeof(Ecore_Event_Mouse_Button));
-             event->x = cov->flick_gesture.flick_to_scroll_last_x;
-             event->y = cov->flick_gesture.flick_to_scroll_last_y;
-             event->multi.radius += MAGIC_NUMBER;
+             memcpy(event1, ev, sizeof(Ecore_Event_Mouse_Button));
+             if (!(event2 = malloc(sizeof(Ecore_Event_Mouse_Button))))
+               {
+                  DBG("NOT ENOUGH MEMORY");
+                  return ;
+               }
+             memcpy(event2, ev, sizeof(Ecore_Event_Mouse_Button));
+             event1->x = cov->flick_gesture.flick_to_scroll_last_x;
+             event1->y = cov->flick_gesture.flick_to_scroll_last_y;
+             event1->multi.device = 0;
+             event1->multi.radius += MAGIC_NUMBER;
+             event2->multi.radius += MAGIC_NUMBER;
+             event2->multi.device = 1;
              cov->flick_gesture.flick_to_scroll = EINA_FALSE;
-             ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_UP, event, NULL, NULL);
+             ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_UP, event1, NULL, NULL);
+             ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_UP, event2, NULL, NULL);
           }
         DEBUG("Restet flick gesture");
         if (cov->n_taps == 0)
@@ -457,13 +467,22 @@ static Eina_Bool _flick_to_scroll_gesture_conditions_met(Ecore_Event_Mouse_Move 
 static void
 start_scroll(int x, int y, Cover *cov)
 {
+   Ecore_Event_Mouse_Button *ev_down;
+   if (!(ev_down = malloc(sizeof(Ecore_Event_Mouse_Button))))
+     {
+        DBG("NOT ENOUGH MEMORY");
+        return ;
+     }
+   memcpy(ev_down, cov->flick_gesture.ev_first_down, sizeof(Ecore_Event_Mouse_Button));
    cov->flick_gesture.ev_first_down->x = x;
    cov->flick_gesture.ev_first_down->y = y;
    _emit_mouse_move_event(cov->flick_gesture.ev_first_down);
    cov->flick_gesture.ev_first_down->timestamp = (int)(ecore_time_get() * 1000);
    cov->flick_gesture.ev_first_down->multi.radius += MAGIC_NUMBER;
-
    ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_DOWN, cov->flick_gesture.ev_first_down, NULL, NULL);
+   ev_down->multi.device = 1;
+   ev_down->multi.radius += MAGIC_NUMBER;
+   ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_DOWN, ev_down, NULL, NULL);
 }
 
 static void
