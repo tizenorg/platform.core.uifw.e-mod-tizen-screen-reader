@@ -4,6 +4,7 @@
 #include "e.h"
 #include "e_screen_reader_config.h"
 #include "e_comp.h"
+#include <Ecore_Wayland.h>
 
 extern int _eina_log_dom;
 
