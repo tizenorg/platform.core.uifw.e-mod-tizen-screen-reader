@@ -248,13 +248,13 @@ static int
 _fetch_a11y_bus_address(void)
 {
    if (conn) return 0;
-   conn = eldbus_address_connection_get("unix:path=/var/run/dbus/system_bus_socket");
+   conn = eldbus_connection_get(ELDBUS_CONNECTION_TYPE_SYSTEM);
    if (!conn)
      {
         ERROR("unable to get system bus");
         goto fail;
      }
-   INFO("Connected to: unix:path=/var/run/dbus/system_bus_socket");
+   INFO("Connected to: System Bus");
 
    if (!conn) goto fail;
    eldbus_name_request(conn, E_A11Y_SERVICE_BUS_NAME,
