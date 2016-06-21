@@ -94,12 +94,41 @@ static Ecore_Event_Filter *ef;
 static Ecore_Event_Handler *eh;
 static void _gesture_init(void);
 static void _gesture_shutdown(void);
-static void _hover_event_emit(Cover *cov, int state);
+static void _hover_event_emit(Cover *cov, gesture_state_e state);
 
 static void
 _gesture_info_free(void *data, void *info)
 {
    free(data);
+}
+
+int gesture_state_enum_to_int(gesture_state_e state)
+{
+   int gesture_state;
+   switch (state)
+     {
+      case GESTURE_NOT_STARTED:
+        gesture_state = 0;
+        break;
+
+      case GESTURE_ONGOING:
+        gesture_state = 1;
+        break;
+
+      case GESTURE_FINISHED:
+        gesture_state = 2;
+        break;
+
+      case GESTURE_ABORTED:
+        gesture_state = 3;
+        break;
+
+      default:
+        gesture_state = -1;
+        break;
+     }
+
+   return gesture_state;
 }
 
 static Eina_Bool
@@ -167,7 +196,7 @@ void __transform_coordinates(int *ax, int *ay, int win_angle)
     }
 }
 
-static void _event_emit(Gesture g, int x, int y, int x_e, int y_e, int state, unsigned int event_time, int angle)
+static void _event_emit(Gesture g, int x, int y, int x_e, int y_e, gesture_state_e state, unsigned int event_time, int angle)
 {
    Gesture_Info *info = calloc(sizeof(Gesture_Info), 1);
    EINA_SAFETY_ON_NULL_RETURN(info);
@@ -180,7 +209,7 @@ static void _event_emit(Gesture g, int x, int y, int x_e, int y_e, int state, un
    info->x_end = x_e;
    info->y_beg = y;
    info->y_end = y_e;
-   info->state = state;
+   info->state = gesture_state_enum_to_int(state);
    info->event_time = event_time;
 
    ecore_event_add(E_EVENT_ATSPI_GESTURE_DETECTED, info, _gesture_info_free, NULL);
@@ -364,7 +393,7 @@ _flick_event_emit(Cover *cov)
         if (cov->flick_gesture.n_fingers == 3)
           type = THREE_FINGERS_FLICK_RIGHT_RETURN;
      }
-   _event_emit(type, ax, ay, axe, aye, 2, cov->event_time, cov->angle);
+   _event_emit(type, ax, ay, axe, aye, GESTURE_FINISHED, cov->event_time, cov->angle);
 }
 
 static void
@@ -638,7 +667,7 @@ _on_hover_timeout(void *data)
 
    if (cov->hover_gesture.last_emission_time == -1)
      {
-        _hover_event_emit(cov, 0);
+        _hover_event_emit(cov, GESTURE_NOT_STARTED);
         cov->hover_gesture.last_emission_time = cov->event_time;
      }
    return EINA_FALSE;
@@ -677,7 +706,7 @@ _hover_gesture_mouse_down(Ecore_Event_Mouse_Button *ev, Cover *cov)
      {
         if (cov->hover_gesture.longpressed)
           {
-             _hover_event_emit(cov, 2);
+             _hover_event_emit(cov, GESTURE_FINISHED);
              goto abort;
           }
         cov->hover_gesture.timestamp = -1;
@@ -690,14 +719,14 @@ _hover_gesture_mouse_down(Ecore_Event_Mouse_Button *ev, Cover *cov)
         if (cov->hover_gesture.timer)
           ecore_timer_del(cov->hover_gesture.timer);
         cov->hover_gesture.timer = NULL;
-        _hover_event_emit(cov, 0);
+        _hover_event_emit(cov, GESTURE_NOT_STARTED);
      }
    // abort gesture if more then 2 fingers touched screen
    if ((cov->hover_gesture.state == GESTURE_ONGOING) &&
        cov->n_taps > 2)
      {
         DEBUG("More then 2 finged. Abort hover gesture");
-        _hover_event_emit(cov, 2);
+        _hover_event_emit(cov, GESTURE_FINISHED);
         goto abort;
      }
    return;
@@ -734,7 +763,7 @@ _hover_gesture_mouse_up(Ecore_Event_Mouse_Button *ev, Cover *cov)
              cov->hover_gesture.timer = NULL;
              // aditionally emit event to complete sequence
              if (cov->hover_gesture.longpressed)
-                _hover_event_emit(cov, 2);
+                _hover_event_emit(cov, GESTURE_FINISHED);
           }
      }
    // reset gesture only if user released all his fingers
@@ -743,19 +772,19 @@ _hover_gesture_mouse_up(Ecore_Event_Mouse_Button *ev, Cover *cov)
 }
 
 static void
-_hover_event_emit(Cover *cov, int state)
+_hover_event_emit(Cover *cov, gesture_state_e state)
 {
-   DEBUG("Emit hover event");
-   if (cov->tap_n_hold_gesture_data.double_tap)
+   if (cov->tap_n_hold_gesture_data.double_tap && !is_slider)
      {
         _emit_mouse_move_event(cov->tap_n_hold_gesture_data.ev_down);
         cov->tap_n_hold_gesture_data.ev_down->multi.radius += MAGIC_NUMBER;
         cov->tap_n_hold_gesture_data.drag_start = EINA_TRUE;
         ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_DOWN, cov->tap_n_hold_gesture_data.ev_down, NULL, NULL);
-
      }
+
    cov->tap_n_hold_gesture_data.double_tap = EINA_FALSE;
    cov->tap_n_hold_gesture_data.n_taps = 0;
+
    int ax = 0, ay = 0, j;
    for (j = 0; j < cov->hover_gesture.n_fingers; j++)
      {
@@ -801,12 +830,12 @@ _hover_gesture_mouse_move(Ecore_Event_Mouse_Move *ev, Cover *cov)
           }
           cov->hover_gesture.x[i] = ev->root.x;
           cov->hover_gesture.y[i] = ev->root.y;
-          _hover_event_emit(cov, 1);
+          _hover_event_emit(cov, GESTURE_ONGOING);
       }
 }
 
 static void
-_tap_event_emit(Cover *cov)
+_tap_event_emit(Cover *cov, gesture_state_e state)
 {
    switch (cov->tap_gesture_data.n_taps)
      {
@@ -817,7 +846,7 @@ _tap_event_emit(Cover *cov)
                _event_emit(ONE_FINGER_SINGLE_TAP,
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
-                     2, cov->event_time, cov->angle);
+                     state, cov->event_time, cov->angle);
             }
          else if(cov->tap_gesture_data.tap_type == TWO_FINGERS_GESTURE)
             {
@@ -825,7 +854,7 @@ _tap_event_emit(Cover *cov)
                _event_emit(TWO_FINGERS_SINGLE_TAP,
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
                      cov->tap_gesture_data.x_org[1], cov->tap_gesture_data.y_org[1],
-                     2, cov->event_time, cov->angle);
+                     state, cov->event_time, cov->angle);
             }
          else if(cov->tap_gesture_data.tap_type == THREE_FINGERS_GESTURE)
             {
@@ -833,7 +862,7 @@ _tap_event_emit(Cover *cov)
                _event_emit(THREE_FINGERS_SINGLE_TAP,
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
                      cov->tap_gesture_data.x_org[2], cov->tap_gesture_data.y_org[2],
-                     2, cov->event_time, cov->angle);
+                     state, cov->event_time, cov->angle);
             }
          else
             {
@@ -847,7 +876,7 @@ _tap_event_emit(Cover *cov)
                _event_emit(ONE_FINGER_DOUBLE_TAP,
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
-                     2, cov->event_time, cov->angle);
+                     state, cov->event_time, cov->angle);
             }
          else if(cov->tap_gesture_data.tap_type == TWO_FINGERS_GESTURE)
             {
@@ -855,7 +884,7 @@ _tap_event_emit(Cover *cov)
                _event_emit(TWO_FINGERS_DOUBLE_TAP,
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
                      cov->tap_gesture_data.x_org[1], cov->tap_gesture_data.y_org[1],
-                     2, cov->event_time, cov->angle);
+                     state, cov->event_time, cov->angle);
             }
          else if(cov->tap_gesture_data.tap_type == THREE_FINGERS_GESTURE)
             {
@@ -863,7 +892,7 @@ _tap_event_emit(Cover *cov)
                _event_emit(THREE_FINGERS_DOUBLE_TAP,
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
                      cov->tap_gesture_data.x_org[2], cov->tap_gesture_data.y_org[2],
-                     2, cov->event_time, cov->angle);
+                     state, cov->event_time, cov->angle);
             }
          else
             {
@@ -877,7 +906,7 @@ _tap_event_emit(Cover *cov)
                _event_emit(ONE_FINGER_TRIPLE_TAP,
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
-                     2, cov->event_time, cov->angle);
+                     state, cov->event_time, cov->angle);
             }
          else if(cov->tap_gesture_data.tap_type == TWO_FINGERS_GESTURE)
             {
@@ -885,7 +914,7 @@ _tap_event_emit(Cover *cov)
                _event_emit(TWO_FINGERS_TRIPLE_TAP,
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
                      cov->tap_gesture_data.x_org[1], cov->tap_gesture_data.y_org[1],
-                     2, cov->event_time, cov->angle);
+                     state, cov->event_time, cov->angle);
             }
          else if(cov->tap_gesture_data.tap_type == THREE_FINGERS_GESTURE)
             {
@@ -893,7 +922,7 @@ _tap_event_emit(Cover *cov)
                _event_emit(THREE_FINGERS_TRIPLE_TAP,
                      cov->tap_gesture_data.x_org[0], cov->tap_gesture_data.y_org[0],
                      cov->tap_gesture_data.x_org[2], cov->tap_gesture_data.y_org[2],
-                     2, cov->event_time, cov->angle);
+                     state, cov->event_time, cov->angle);
             }
          else
             {
@@ -916,7 +945,9 @@ _on_tap_timer_expire(void *data)
       cov->tap_n_hold_gesture_data.double_tap = EINA_TRUE;
 
    if (cov->tap_gesture_data.started && !cov->tap_gesture_data.pressed)
-     _tap_event_emit(cov);
+      _tap_event_emit(cov, GESTURE_FINISHED);
+   else if (cov->tap_n_hold_gesture_data.double_tap)
+      _tap_event_emit(cov, GESTURE_ABORTED);
 
    // finish gesture
    cov->tap_gesture_data.started = EINA_FALSE;
@@ -1264,6 +1295,7 @@ _gesture_init()
         ERROR("Fatal Memory error!");
         return;
      }
+    is_slider = EINA_FALSE;
 }
 
 static void

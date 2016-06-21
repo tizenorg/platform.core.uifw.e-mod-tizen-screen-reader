@@ -64,6 +64,8 @@ typedef struct {
      unsigned int event_time; //time stamp for the event
 } Gesture_Info;
 
+Eina_Bool is_slider;
+
 int _e_mod_log_init(void);
 void _e_mod_log_shutdown(void);
 
