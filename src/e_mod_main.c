@@ -25,10 +25,14 @@ EAPI E_Module_Api e_modapi =
 
 #define GESTURE_DETECTED_SIGNAL 0
 static Eldbus_Message *_sc_enable(const Eldbus_Service_Interface *iface, const Eldbus_Message *msg);
+static Eldbus_Message *_is_slider(const Eldbus_Service_Interface *iface, const Eldbus_Message *msg);
 
 static const Eldbus_Method methods[] = {
       { "ScreenReaderEnabled", ELDBUS_ARGS({"b", "bool"}), ELDBUS_ARGS({"b", "bool"}),
         _sc_enable
+      },
+      { "IsSlider", ELDBUS_ARGS({"b", "bool"}), ELDBUS_ARGS({"b", "bool"}),
+        _is_slider
       },
       { }
 };
@@ -241,6 +245,15 @@ _sc_enable(const Eldbus_Service_Interface *iface, const Eldbus_Message *msg)
         INFO("Shutdown events");
         _e_mod_submodules_shutdown();
      }
+   return NULL;
+}
+
+static Eldbus_Message *
+_is_slider(const Eldbus_Service_Interface *iface, const Eldbus_Message *msg)
+{
+   if (!eldbus_message_arguments_get(msg, "b", &is_slider))
+     ERROR("eldbus_message_arguments_get() error\n");
+
    return NULL;
 }
 
