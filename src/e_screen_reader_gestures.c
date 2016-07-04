@@ -514,6 +514,7 @@ start_scroll(int x, int y, Cover *cov)
    cov->flick_gesture.ev_first_down->timestamp = (int)(ecore_time_get() * 1000);
    cov->flick_gesture.ev_first_down->multi.radius += MAGIC_NUMBER;
    ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_DOWN, cov->flick_gesture.ev_first_down, NULL, NULL);
+   _emit_mouse_move_event(ev_down);
    ev_down->multi.device = 1;
    ev_down->multi.radius += MAGIC_NUMBER;
    ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_DOWN, ev_down, NULL, NULL);
@@ -1222,6 +1223,7 @@ _mouse_button_down(int type, Ecore_Event_Mouse_Button *event)
 static Eina_Bool
 _event_filter(void *data, void *loop_data, int type, void *event)
 {
+    Ecore_Event_Mouse_Button *ev = event;
    if (type == ECORE_EVENT_MOUSE_BUTTON_DOWN)
      {
         return _mouse_button_down(type, event);
@@ -1232,7 +1234,7 @@ _event_filter(void *data, void *loop_data, int type, void *event)
      }
    else if (type == ECORE_EVENT_MOUSE_MOVE)
      {
-        return _mouse_move(type, event);
+       return _mouse_move(type, event);
      }
 
    return EINA_TRUE;
