@@ -514,6 +514,7 @@ start_scroll(int x, int y, Cover *cov)
    cov->flick_gesture.ev_first_down->timestamp = (int)(ecore_time_get() * 1000);
    cov->flick_gesture.ev_first_down->multi.radius += MAGIC_NUMBER;
    ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_DOWN, cov->flick_gesture.ev_first_down, NULL, NULL);
+   _emit_mouse_move_event(ev_down);
    ev_down->multi.device = 1;
    ev_down->multi.radius += MAGIC_NUMBER;
    ecore_event_add(ECORE_EVENT_MOUSE_BUTTON_DOWN, ev_down, NULL, NULL);
