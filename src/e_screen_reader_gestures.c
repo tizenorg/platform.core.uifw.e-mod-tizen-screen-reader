@@ -1064,43 +1064,35 @@ _tap_gestures_mouse_up(Ecore_Event_Mouse_Button *ev, Cover *cov)
             {
                DEBUG("First finger up");
 
-               int dx = ev->root.x - cov->tap_gesture_data.x_org[0];
-               int dy = ev->root.y - cov->tap_gesture_data.y_org[0];
-
-               if((dx * dx + dy * dy) < _e_mod_config->one_finger_tap_radius *
-                     _e_mod_config->one_finger_tap_radius)
-                  {
-                     if (cov->n_taps == 0)
-                        {
-                           cov->tap_gesture_data.n_taps++;
-                        }
-                  }
+               if (_tap_gesture_finger_check(cov, ev->root.x, ev->root.y) != -1)
+                 {
+                    if (cov->n_taps == 0)
+                      {
+                         cov->tap_gesture_data.n_taps++;
+                      }
+                 }
                else
-                  {
-                     ERROR("Abort gesture");
-                     cov->tap_gesture_data.started = EINA_FALSE;
-                  }
+                 {
+                    ERROR("Abort gesture");
+                    cov->tap_gesture_data.started = EINA_FALSE;
+                 }
             }
          else if (ev->multi.device == cov->tap_gesture_data.finger[1])
             {
                DEBUG("Second finger up");
 
-               int dx = ev->root.x - cov->tap_gesture_data.x_org[1];
-               int dy = ev->root.y - cov->tap_gesture_data.y_org[1];
-
-               if((dx * dx + dy * dy) < _e_mod_config->one_finger_tap_radius *
-                     _e_mod_config->one_finger_tap_radius)
-                  {
-                     if (cov->n_taps == 0)
-                        {
-                           cov->tap_gesture_data.n_taps++;
-                        }
-                  }
+               if (_tap_gesture_finger_check(cov, ev->root.x, ev->root.y) != - 1)
+                 {
+                    if (cov->n_taps == 0)
+                      {
+                         cov->tap_gesture_data.n_taps++;
+                      }
+                 }
                else
-                  {
-                     ERROR("Abort gesture");
-                     cov->tap_gesture_data.started = EINA_FALSE;
-                  }
+                 {
+                    ERROR("Abort gesture");
+                    cov->tap_gesture_data.started = EINA_FALSE;
+                 }
             }
          else if (ev->multi.device == cov->tap_gesture_data.finger[2])
             {
@@ -1134,18 +1126,27 @@ _tap_gestures_mouse_up(Ecore_Event_Mouse_Button *ev, Cover *cov)
 static void
 _tap_gestures_move(Ecore_Event_Mouse_Move *ev, Cover *cov)
 {
-   if(_tap_gesture_finger_check(cov, ev->root.x, ev->root.y) == -1)
-   {
-       ERROR("Abort gesture");
-       cov->tap_gesture_data.started = EINA_FALSE;
-       ecore_timer_del(cov->tap_gesture_data.timer);
-       cov->tap_gesture_data.timer = NULL;
-       cov->tap_gesture_data.tap_type = ONE_FINGER_GESTURE;
-       cov->tap_gesture_data.finger[0] = -1;
-       cov->tap_gesture_data.finger[1] = -1;
-       cov->tap_gesture_data.finger[2] = -1;
-       return;
-   }
+   int i;
+   for (i = 0; i < sizeof(cov->tap_gesture_data.finger) / sizeof(cov->tap_gesture_data.finger[0]); i++)
+     {
+        if (ev->multi.device == cov->tap_gesture_data.finger[i])
+          {
+             int dx = ev->root.x - cov->tap_gesture_data.x_org[i];
+             int dy = ev->root.y - cov->tap_gesture_data.y_org[i];
+             if ((dx * dx + dy * dy) > _e_mod_config->one_finger_tap_radius * _e_mod_config->one_finger_tap_radius)
+               {
+                  ERROR("Abort gesture");
+                  cov->tap_gesture_data.started = EINA_FALSE;
+                  ecore_timer_del(cov->tap_gesture_data.timer);
+                  cov->tap_gesture_data.timer = NULL;
+                  cov->tap_gesture_data.tap_type = ONE_FINGER_GESTURE;
+                  cov->tap_gesture_data.finger[0] = -1;
+                  cov->tap_gesture_data.finger[1] = -1;
+                  cov->tap_gesture_data.finger[2] = -1;
+                  return;
+               }
+          }
+     }
 }
 
 static Eina_Bool
